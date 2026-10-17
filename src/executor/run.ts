@@ -20,6 +20,7 @@ import { DynamicWorkerExecutor } from "@cloudflare/codemode";
 import superSpecJson from "../../specs/super-spec.json";
 import { getCatalog } from "../catalog/load.ts";
 import { recoveryCandidatesFromSources } from "../catalog/search.ts";
+import type { CatalogPageResolver } from "../catalog/search-ranking.ts";
 import type { BuildAuthorityRole, Catalog } from "../catalog/types.ts";
 import { buildSandbox, type ArtifactReadStats, type OpLedgerCall, type SandboxProvider } from "./providers.ts";
 import {
@@ -105,6 +106,10 @@ export type ExecuteCallContext = {
   artifactOwner?: string;
   requestId?: string;
   rayId?: string;
+  /** Host-only, request-scoped; never retained by the cached runner or exposed in the sandbox. */
+  searchResolver?: CatalogPageResolver;
+  /** Cancels catalog ranking; it does not terminate sandbox execution. */
+  searchSignal?: AbortSignal;
 };
 
 export type ExecuteRunner = (code: string, context?: ExecuteCallContext) => Promise<ExecuteOutcome>;
@@ -371,7 +376,9 @@ export function createExecuteRunner(env: Env, options: ExecuteRunnerOptions = {}
           artifactReadStats = stats;
         }
       },
-      codemodeDiscovery: options.codemodeDiscovery
+      codemodeDiscovery: options.codemodeDiscovery,
+      searchResolver: context.searchResolver,
+      searchSignal: context.searchSignal
     });
     // Custom span because the Worker Loader isolate is NOT auto-instrumented
     // (ARCHITECTURE.md) — without it the sandbox run

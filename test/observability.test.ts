@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashPrefix, logEvent } from "../src/observability.ts";
 import { searchEventFields } from "../src/observability-search.ts";
+import type { RankingProviderErrorCode } from "../src/catalog/search-ranking.ts";
 import {
   authSubjectFromProps,
   buildMcpRequestObservability,
@@ -53,6 +54,28 @@ describe("logEvent", () => {
 });
 
 describe("searchEventFields", () => {
+  it.each(["configuration", "private-provider-detail"])("projects the allowed error category for %s", code => {
+    const fields = searchEventFields({ query: "private-query", requestedLimit: null, page: null, summary: null,
+      ranking: { method: "native", reason: "provider-error", errorCode: code as RankingProviderErrorCode } });
+    expect(fields).toEqual({ queryChars: 13, requestedLimit: null, effectiveLimit: null,
+      omittedCount: 0, gatedHits: 0, backfillHits: 0, rankingMethod: "native", rankingReason: "provider-error",
+      ...(code === "configuration" ? { rankingErrorCode: "configuration" } : {}) });
+  });
+
+  it("logs only the fixed native ranking outcome fields", () => {
+    const ranking = { method: "native" as const, reason: "provider-error" as const, error: "private-provider-detail" };
+    const fields = searchEventFields({ query: "private-query", requestedLimit: null, page: null, summary: null, ranking });
+    expect(fields).toEqual({ queryChars: 13, requestedLimit: null, effectiveLimit: null,
+      omittedCount: 0, gatedHits: 0, backfillHits: 0, rankingMethod: "native", rankingReason: "provider-error" });
+  });
+
+  it("logs the bounded provider count without provider payloads", () => {
+    const ranking = { method: "provider" as const, candidateCount: 50, payload: "private-provider-detail" };
+    const fields = searchEventFields({ query: "private-query", requestedLimit: 5, page: null, summary: null, ranking });
+    expect(fields).toEqual({ queryChars: 13, requestedLimit: 5, effectiveLimit: null,
+      omittedCount: 0, gatedHits: 0, backfillHits: 0, rankingMethod: "provider", rankingCandidateCount: 50 });
+  });
+
   it("keeps only content-free query and page-shape counts", () => {
     const query = "sensitive search ".repeat(30);
     const fields = searchEventFields({

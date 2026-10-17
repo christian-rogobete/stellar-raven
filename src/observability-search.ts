@@ -8,6 +8,7 @@
  * count.
  */
 import type { SearchPage } from "./catalog/search.ts";
+import { safeRankingErrorCode, type RankingDecision, type RankingProviderErrorCode } from "./catalog/search-ranking.ts";
 
 type SearchEventId = { id: string };
 
@@ -26,6 +27,8 @@ export type SearchEventFieldsInput = {
   page: SearchPage | null;
   /** Null for refusal events that do not report a search result shape. */
   summary: SearchEventSummary | null;
+  /** Host outcome only; fallback reasons do not enter model-facing responses. */
+  ranking?: RankingDecision;
 };
 
 export type SearchEventFields = {
@@ -43,6 +46,10 @@ export type SearchEventFields = {
   recoveryTop?: string[];
   widerCandidates?: number;
   widerCandidateTop?: string[];
+  rankingMethod?: RankingDecision["method"];
+  rankingReason?: Extract<RankingDecision, { method: "native" }>["reason"];
+  rankingCandidateCount?: number;
+  rankingErrorCode?: RankingProviderErrorCode;
 };
 
 const topIds = (items: readonly SearchEventId[]): string[] =>
@@ -51,6 +58,7 @@ const topIds = (items: readonly SearchEventId[]): string[] =>
 export function searchEventFields(input: SearchEventFieldsInput): SearchEventFields {
   const { page } = input;
   const hits = page?.hits ?? [];
+  const errorCode = input.ranking?.method === "native" ? safeRankingErrorCode(input.ranking.errorCode) : undefined;
   return {
     queryChars: input.query.length,
     requestedLimit: input.requestedLimit,
@@ -58,6 +66,12 @@ export function searchEventFields(input: SearchEventFieldsInput): SearchEventFie
     omittedCount: page ? Math.max(0, page.total - page.hits.length) : 0,
     gatedHits: hits.filter((hit) => hit.tier === "gated").length,
     backfillHits: hits.filter((hit) => hit.tier === "backfill").length,
+    ...(input.ranking?.method === "provider"
+      ? { rankingMethod: input.ranking.method, rankingCandidateCount: input.ranking.candidateCount }
+      : input.ranking
+        ? { rankingMethod: input.ranking.method, rankingReason: input.ranking.reason,
+            ...(errorCode ? { rankingErrorCode: errorCode } : {}) }
+        : {}),
     ...(input.summary
       ? {
           hits: input.summary.hits.length,

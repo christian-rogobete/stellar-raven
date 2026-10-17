@@ -36,11 +36,12 @@ import {
   type SearchRecoveryMetadata,
   type WiderCandidate
 } from "../catalog/search.ts";
+import { providerRankingFields, PROVIDER_ORDER_NOTE, type CatalogPageResolver, type ProviderRanking, type RankingDecision } from "../catalog/search-ranking.ts";
 import type { RetrievalReason } from "../catalog/types.ts";
 import { getCatalog } from "../catalog/load.ts";
 import {
-  SEARCH_DESCRIPTION,
-  EXECUTE_DESCRIPTION,
+  searchDescriptionForRanking,
+  executeDescriptionForRanking,
   rankedSearchInputSchema,
   executeInputSchema
 } from "../mcp/tools.ts";
@@ -94,6 +95,7 @@ type SearchStructured = {
   confidence: SearchConfidence;
   recoveryMetadata: SearchRecoveryMetadata;
   nextSteps: string;
+  ranking?: ProviderRanking;
 };
 
 const SOURCE_BASIS_CALL_LIMIT = 8;
@@ -280,11 +282,18 @@ function demoExecutePreflightError(code: string): string | null {
   }
 }
 
+function searchSignal(host?: AbortSignal, call?: AbortSignal): AbortSignal | undefined {
+  return host && call && host !== call ? AbortSignal.any([host, call]) : host ?? call;
+}
+
 export function buildDemoTools(opts: {
   env: Env;
   emit: (f: DemoFrame) => void;
   budget?: DemoToolBudget;
   runExecute?: ExecuteRunner;
+  /** Shared across model attempts and execute calls; never retained by getRunner. */
+  searchResolver?: CatalogPageResolver;
+  searchSignal?: AbortSignal;
 }): {
   tools: Record<string, unknown>;
   budgetReport: () => DemoToolBudget;
@@ -297,10 +306,10 @@ export function buildDemoTools(opts: {
   const budget = opts.budget ?? createDemoToolBudget();
 
   const search = tool({
-    description: `${SEARCH_DESCRIPTION}\n\nPlayground evidence rule: search hits are navigation metadata and callable signatures, not sufficient factual evidence for the answer. Use execute to obtain factual service or skill results.`,
+    description: `${searchDescriptionForRanking(opts.searchResolver !== undefined)}\n\nPlayground evidence rule: search hits are navigation metadata and callable signatures, not sufficient factual evidence for the answer. Use execute to obtain factual service or skill results.`,
     inputSchema: z.object(rankedSearchInputSchema),
     strict: DEMO_TOOL_STRICT,
-    execute: async (args) => {
+    execute: async (args, execution) => {
       const id = crypto.randomUUID();
       emit({ type: "tool-start", id, tool: "search", input: args });
       const t0 = Date.now();
@@ -310,13 +319,14 @@ export function buildDemoTools(opts: {
       // `service` keeps the zero-hit response SHAPE with the diagnosis in
       // nextSteps. Same event fields under a demo-distinguishable evt name.
       const services = catalogServices(catalog);
-      const respond = (structured: SearchStructured, page: SearchPage | null) => {
+      const respond = (structured: SearchStructured, page: SearchPage | null, ranking?: RankingDecision) => {
         logEvent("demo-search", {
           ...searchEventFields({
             query: args.query,
             requestedLimit: args.limit ?? null,
             page,
-            summary: structured
+            summary: structured,
+            ranking
           }),
           responseChars: JSON.stringify(structured).length,
           ms: Date.now() - t0
@@ -384,14 +394,19 @@ export function buildDemoTools(opts: {
         }, null);
       }
 
-      const page = searchCatalogPage(catalog, {
+      const searchOptions = {
         query: args.query,
         kind: args.kind,
         service: args.service,
         // Demo delta: page size clamped (the schema still advertises the
         // production max so the tool contract text stays verbatim).
         limit: Math.min(args.limit ?? DEMO_SEARCH_DEFAULT_LIMIT, DEMO_CAPS.maxSearchLimit)
-      });
+      };
+      const resolved = opts.searchResolver
+        ? await opts.searchResolver(catalog, searchOptions, { signal: searchSignal(opts.searchSignal, execution?.abortSignal) })
+        : { page: searchCatalogPage(catalog, searchOptions) };
+      const { page } = resolved;
+      const ranking = "ranking" in resolved ? resolved.ranking : undefined;
       const { total, truncated } = page;
       const hits = page.hits.map(compactHitForDemo);
       const widerCandidates = page.widerCandidates.map(compactWiderCandidateForDemo);
@@ -411,7 +426,7 @@ export function buildDemoTools(opts: {
           : " No search calls remain; do not conclude capability absence from mismatched hits alone, and use the best available exact ids.";
       const baseNextSteps =
         hits.length > 0
-          ? `Navigation only: these hits identify composable operations and skills, but they are not factual evidence for the user's answer. Write ONE \`execute\` script that calls several relevant operations (Promise.all across services for independent calls), then follow up with deeper calls parameterized by returned rows. Every call resolves to { ok: true, data, asOf, asOfBasis, caveat? } or { ok: false, error: { kind, message, hint? } } — payload fields live under \`.data\` (\`r.data.projects\`, never \`r.projects\`); check \`r.ok\` first. Errors are failed evidence and \`soft-empty\` is inconclusive. An ok \`caveat\` ("no-rows" or "unverified-match") grounds no open-world negative and no identity; an exact closed-world empty still holds at that source's scope. Otherwise recover with remaining budget or qualify/abstain. Skill hits are operational playbooks — read needed sections via \`codemode.skill.read(id, { sections })\`; runnable hits show the exact \`codemode.skill.run("<exact id>", input)\` call. Scores share one scale; gated hits lead except a backfill hit may be promoted when it decisively dominates (>=1.6x), so hit order is authoritative. The same production discovery helpers are enabled in-script: \`codemode.search\`, \`codemode.describe\`, \`codemode.catalog\`, and \`codemode.spec\`. Avoid lossy projection false negatives: inspect row keys or filter raw rows before selecting fields.${truncated ? " More entries matched than shown (truncated)." : ""}${searchAgain}`
+          ? `Navigation only: these hits identify composable operations and skills, but they are not factual evidence for the user's answer. Write ONE \`execute\` script that calls several relevant operations (Promise.all across services for independent calls), then follow up with deeper calls parameterized by returned rows. Every call resolves to { ok: true, data, asOf, asOfBasis, caveat? } or { ok: false, error: { kind, message, hint? } } — payload fields live under \`.data\` (\`r.data.projects\`, never \`r.projects\`); check \`r.ok\` first. Errors are failed evidence and \`soft-empty\` is inconclusive. An ok \`caveat\` ("no-rows" or "unverified-match") grounds no open-world negative and no identity; an exact closed-world empty still holds at that source's scope. Otherwise recover with remaining budget or qualify/abstain. Skill hits are operational playbooks — read needed sections via \`codemode.skill.read(id, { sections })\`; runnable hits show the exact \`codemode.skill.run("<exact id>", input)\` call. ${ranking?.method === "provider" ? PROVIDER_ORDER_NOTE : "Scores share one scale; gated hits lead except a backfill hit may be promoted when it decisively dominates (>=1.6x), so hit order is authoritative."} The same production discovery helpers are enabled in-script: \`codemode.search\`, \`codemode.describe\`, \`codemode.catalog\`, and \`codemode.spec\`. Avoid lossy projection false negatives: inspect row keys or filter raw rows before selecting fields.${truncated ? " More entries matched than shown (truncated)." : ""}${searchAgain}`
           : remainingSearches > 0
             ? `No navigation hits. Use another candidate family or varied vocabulary (${remainingSearches} searches remain), or use codemode.search inside execute; do not conclude the capability or fact is absent from one empty catalog search.`
             : "No navigation hits and no top-level search calls remain. You may use codemode.search inside execute; do not conclude the capability or fact is absent from an empty catalog search, and qualify if factual evidence cannot be recovered.";
@@ -420,7 +435,7 @@ export function buildDemoTools(opts: {
           ? `${baseNextSteps} This query has one content token without an operation-name token match. Use the advisory directory candidate for a bounded name lookup when the ranked hits do not identify the requested entity.${widerCandidates.some((candidate) => candidate.lane !== "directory") ? " If that lookup does not answer the question, use one relevant broad advisory for a bounded pass." : ""}`
           : widerCandidates.length > 0
           ? hits.length > 0
-            ? `${baseNextSteps} This page has no gated operation match, so the ranked hits are lexical-only candidates; prefer the leading hit that fits the question, and if none does, run one bounded broad pass over the advisory widerCandidates.`
+            ? `${baseNextSteps} ${ranking?.method === "provider" ? "This visible page has no gated operation match; the hits have been ordered by the host provider;" : "This page has no gated operation match, so the ranked hits are lexical-only candidates;"} prefer the leading hit that fits the question, and if none does, run one bounded broad pass over the advisory widerCandidates.`
             : `${baseNextSteps} No gated operation matched either; run one bounded broad pass over the advisory widerCandidates before retrying, and still do not conclude absence.`
           : baseNextSteps;
       return respond({
@@ -431,16 +446,17 @@ export function buildDemoTools(opts: {
         widerCandidates,
         confidence: page.confidence,
         recoveryMetadata: page.recoveryMetadata,
-        nextSteps
-      }, page);
+        nextSteps,
+        ...providerRankingFields(ranking)
+      }, page, ranking);
     }
   });
 
   const execute = tool({
-    description: EXECUTE_DESCRIPTION,
+    description: executeDescriptionForRanking(opts.searchResolver !== undefined),
     inputSchema: z.object(executeInputSchema),
     strict: DEMO_TOOL_STRICT,
-    execute: async (args) => {
+    execute: async (args, execution) => {
       const id = crypto.randomUUID();
       emit({ type: "tool-start", id, tool: "execute", input: args });
 
@@ -474,7 +490,11 @@ export function buildDemoTools(opts: {
       const t0 = Date.now();
       let outcome: ExecuteOutcome;
       try {
-        outcome = await (opts.runExecute ?? getRunner(env))(args.code);
+        const runner = opts.runExecute ?? getRunner(env);
+        const signal = searchSignal(opts.searchSignal, execution?.abortSignal);
+        outcome = opts.searchResolver || signal
+          ? await runner(args.code, { searchResolver: opts.searchResolver, searchSignal: signal })
+          : await runner(args.code);
       } catch (e) {
         // The runner is designed never to throw; belt-and-braces anyway.
         outcome = {

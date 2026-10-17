@@ -14,6 +14,7 @@ import {
   type SearchPage
 } from "./search.ts";
 import type { Catalog, RetrievalReason, SearchKind } from "./types.ts";
+import type { CatalogPageResolver, RankingDecision } from "./search-ranking.ts";
 
 type CatalogSearchResolutionRequest = {
   query: string;
@@ -36,10 +37,11 @@ type UnknownRecoveryIdsIssue = {
 type CatalogSearchRecoveryStage =
   | {
       ok: true;
-      resolve: (request: CatalogSearchResolutionRequest) => {
+      resolve: (request: CatalogSearchResolutionRequest, context?: { signal?: AbortSignal }) => Promise<{
         page: SearchPage;
         recovery: RecoveryCandidate[];
-      };
+        ranking?: RankingDecision;
+      }>;
     }
   | {
       ok: false;
@@ -63,7 +65,8 @@ type PreparedCatalogSearch =
  */
 export function prepareCatalogSearch(
   catalog: Catalog,
-  service: string | undefined
+  service: string | undefined,
+  pageResolver?: CatalogPageResolver
 ): PreparedCatalogSearch {
   const validServices = catalogServices(catalog);
   if (service !== undefined && !validServices.includes(service)) {
@@ -92,17 +95,20 @@ export function prepareCatalogSearch(
 
       return {
         ok: true,
-        resolve: (request) => {
-          const page = searchCatalogPage(catalog, {
+        resolve: async (request, context) => {
+          const options = {
             query: request.query,
             kind: request.kind,
             service,
             limit: request.limit
-          });
+          };
+          const resolved = pageResolver
+            ? await pageResolver(catalog, options, context)
+            : { page: searchCatalogPage(catalog, options) };
           const recovery = recoverFrom.length > 0
             ? recoveryCandidates(catalog, recoverFrom, request.reason)
             : [];
-          return { page, recovery };
+          return { ...resolved, recovery };
         }
       };
     }

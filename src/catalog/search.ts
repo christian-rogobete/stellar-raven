@@ -1280,18 +1280,31 @@ export function searchCatalogPage(catalog: Catalog, opts: SearchOptions): Search
   const recoveryMetadata: SearchRecoveryMetadata = {
     serviceFilterExcludedSkills: deriveServiceFilterExcludedSkillAdvisories(catalog, opts)
   };
+  return finalizeSearchPage(catalog, opts, hits, {
+    total,
+    effectiveLimit: limit,
+    recoveryMetadata
+  }, query.contentTokens);
+}
+
+/** Rebuild facts that depend on visible hits after host-side selection. */
+export function finalizeSearchPage(
+  catalog: Catalog,
+  opts: SearchOptions,
+  hits: SearchHit[],
+  facts: Pick<SearchPage, "total" | "effectiveLimit" | "recoveryMetadata">,
+  preparedQueryTokens = prepareSearchQuery(catalog, opts.query).contentTokens
+): SearchPage {
   return {
     hits,
-    total,
-    truncated: total > hits.length,
-    effectiveLimit: limit,
-    widerCandidates: deriveWiderCandidates(catalog, hits, opts, 3, query.contentTokens),
+    ...facts,
+    truncated: facts.total > hits.length,
+    widerCandidates: deriveWiderCandidates(catalog, hits, opts, 3, preparedQueryTokens),
     confidence: {
       hitCount: hits.length,
       topScoreGap: hits.length >= 2 ? Math.abs(hits[0]!.score - hits[1]!.score) : null,
       topScoreTiers: hits.length >= 2 ? { first: hits[0]!.tier, second: hits[1]!.tier } : null
-    },
-    recoveryMetadata
+    }
   };
 }
 

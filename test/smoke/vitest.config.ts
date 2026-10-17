@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 import { loadSkillTexts, skillFileUrl } from "../../scripts/lib/skill-mirror.mjs";
+import { jevFixtureResponse } from "./jev-fixture.ts";
 
 /**
  * Pinned skill bodies, keyed by the exact raw.githubusercontent.com URL the
@@ -87,7 +88,9 @@ export default defineConfig({
         // so enforcement lives here and per-test mocking uses vi.stubGlobal;
         // tests run in the same isolate as the main worker, so global stubs
         // apply to host-side adapter fetches too.)
-        outboundService(request: Request) {
+        async outboundService(request: Request) {
+          const jevResponse = await jevFixtureResponse(request);
+          if (jevResponse) return jevResponse;
           const body = pinnedBodies.get(request.url);
           if (body !== undefined) {
             return new Response(body, {

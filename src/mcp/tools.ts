@@ -30,6 +30,7 @@ import {
   type WiderCandidate
 } from "../catalog/search.ts";
 import { prepareCatalogSearch } from "../catalog/search-resolution.ts";
+import { providerRankingFields, PROVIDER_ORDER_NOTE, type CatalogPageResolver, type ProviderRanking, type RankingDecision } from "../catalog/search-ranking.ts";
 import { getCatalog } from "../catalog/load.ts";
 import { ARTIFACT_TTL_MS } from "../artifacts/store.ts";
 import { SEARCH_KINDS, RETRIEVAL_REASONS } from "../catalog/types.ts";
@@ -221,6 +222,19 @@ export const rankedSearchOutputSchema = {
   nextSteps: z.string().describe("What to do with these results (server hint).")
 };
 
+const optionalRankingOutputSchema = {
+  ...rankedSearchOutputSchema,
+  hits: z.array(searchHitSchema.extend({
+    score: z.number().describe("Native lexical relevance score. When ranking.method is provider, it is provenance, not the final sort key."),
+    tier: z.enum(["gated", "backfill"]).describe("Native scorer provenance. When ranking.method is provider, tier does not determine the final order.")
+  })).describe("Catalog entries in authoritative array order; a successful host override is marked by ranking.method. Operation hits include a rendered TypeScript signature you can call from `execute`."),
+  confidence: searchConfidenceSchema.describe("Facts about visible hits and their native lexical scores; not calibrated model confidence."),
+  ranking: z.object({
+    method: z.literal("provider"),
+    candidateCount: z.number().int().min(2).max(50)
+  }).optional().describe("Present only after successful host ranking of a bounded native candidate pool; absent for native search or fallback.")
+};
+
 export const executeInputSchema = {
   code: z
     .string()
@@ -234,17 +248,16 @@ export const executeInputSchema = {
 // across tool descriptions, SERVER_INSTRUCTIONS, and search nextSteps.
 // Remove that guidance if the set is empty; ADR-0003 forbids absent surfaces.
 // The Playground uses the same exported tool contract.
-// One official upstream documentation URL per source family, appended to the
-// END of both tool descriptions.
-//
-// The trailing placement is load-bearing. Claude Code clips a tool description
-// at 2,048 characters, so whatever sits early spends the model's whole prefix
-// budget. These URLs are trailing reference metadata and provide no runtime
-// guidance, so they ride last, behind the behavior contract the model acts on.
+// One official upstream documentation URL per source family follows the base
+// behavior contract. Ranking variants may append host guidance after these links.
+// Claude Code clips tool descriptions at 2,048 characters; reference URLs stay
+// outside that prefix to preserve the behavior guidance.
 //
 // test/mcp-instructions.test.ts pins both invariants: the URLs ship in the full
 // description, and they stay out of the clipped prefix.
 export const UPSTREAM_DOC_LINKS = `Upstream documentation: Lumenloop — API guide https://api.lumenloop.com/v1/docs; Stellar Light/Scout (scout) — OpenAPI https://stellarlight.xyz/api/openapi.json; Stellar Docs — https://developers.stellar.org/docs.`;
+
+const NATIVE_SEARCH_ORDER_RULE = `- Each hit's \`tier\` says which scorer ranked it: "gated" (strict, primary) or "backfill" (gate-relaxed page fill for long queries). Scores share one scale; gated hits lead except a backfill hit may be promoted when it decisively dominates (>=1.6x). Hit order is authoritative.`;
 
 export const SEARCH_DESCRIPTION = `Ranked lexical search over every exposed service operation (lumenloop.*, scout.*, stellarDocs.*) and whole skill. Skill sections are exact-read affordances exposed on whole-skill hits through availableSections; they are not independent ranked hits.
 
@@ -268,7 +281,7 @@ Most questions have a primary family and a corroborating one — pick both up fr
 - Never guess operation or skill names — always discover them here first (or with \`codemode.search\` mid-script).
 - Prefer targeted queries ("account trustlines", "soroban storage patterns") over broad ones, and vary vocabulary across candidate families.
 - Use \`kind\` to narrow to \`operation\` or \`skill\`, and \`service\` to narrow to one namespace. Filter values are exact-match — an unknown \`service\` is rejected with the valid names, never silently empty.
-- Each hit's \`tier\` says which scorer ranked it: "gated" (strict, primary) or "backfill" (gate-relaxed page fill for long queries). Scores share one scale; gated hits lead except a backfill hit may be promoted when it decisively dominates (>=1.6x). Hit order is authoritative.
+${NATIVE_SEARCH_ORDER_RULE}
 - \`truncated: true\` means more entries matched (\`total\`) than the page shows — if nothing here fits, search again with a higher \`limit\`, the other candidate family, or varied vocabulary before concluding the capability is missing.
 - Skill hits are operational playbooks and carry \`availableSections\` — read those sections via \`codemode.skill.read(id, { sections })\` inside \`execute\`.
 - A few skills are also RUNNABLE — their hits additionally carry a \`signature\` whose callable line is \`codemode.skill.run("<exact id>", input)\`: one call inside \`execute\` that runs the skill's whole data-gathering pipeline and resolves to the standard { ok: true, data } | { ok: false, error } envelope.
@@ -343,6 +356,21 @@ Evidence discipline: copy exact symbols, types, formulas, and identifiers from r
 
 Host blocks preserve metadata and truncation. Read listed artifacts with \`codemode.artifact.info(id)\` / \`codemode.artifact.read(id)\`, then return a compact projection. Operation and skill ids are exact-match — never guess them; discover via \`search\` or \`codemode.search\` mid-script.`;
 
+/** Host opt-in only: model arguments cannot turn ranking on or select a provider. */
+export function searchDescriptionForRanking(enabled: boolean): string {
+  return enabled
+    ? SEARCH_DESCRIPTION
+        .replace("Ranked lexical search over", "Search with optional host ranking of native lexical candidates from")
+        .replace(NATIVE_SEARCH_ORDER_RULE, `- When ranking.method is "provider": ${PROVIDER_ORDER_NOTE} When ranking is absent, native tier-first ordering and its decisive-score promotion rule apply.`)
+    : SEARCH_DESCRIPTION;
+}
+
+export function executeDescriptionForRanking(enabled: boolean): string {
+  return enabled
+    ? `${EXECUTE_DESCRIPTION}\n\nOptional host ranking: codemode.search may additionally return ranking: { method: "provider", candidateCount }. ${PROVIDER_ORDER_NOTE} When ranking is absent, native search applies.`
+    : EXECUTE_DESCRIPTION;
+}
+
 export const SERVER_INSTRUCTIONS = `${BASE_SERVER_INSTRUCTIONS}\n\n${MICRO_MAP}`;
 
 export type RegisterToolsOptions = {
@@ -353,6 +381,8 @@ export type RegisterToolsOptions = {
    */
   runExecute?: ExecuteRunner;
   executeContext?: () => ExecuteCallContext;
+  /** One host-owned closure shared with execute for this request/turn. */
+  searchResolver?: CatalogPageResolver;
   /**
    * Host-side token cap for all execute model-boundary channels: final result
    * is shaped by the runner, logs/errors here.
@@ -368,9 +398,9 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
     SEARCH_TOOL_NAME,
     {
       title: SEARCH_TOOL_TITLE,
-      description: SEARCH_DESCRIPTION,
+      description: searchDescriptionForRanking(options.searchResolver !== undefined),
       inputSchema: z.object(rankedSearchInputSchema),
-      outputSchema: z.object(rankedSearchOutputSchema),
+      outputSchema: z.object(options.searchResolver ? optionalRankingOutputSchema : rankedSearchOutputSchema),
       annotations: {
         // Directory review reads annotations.title; clients prefer the top-level title.
         title: SEARCH_TOOL_TITLE,
@@ -379,7 +409,7 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
         openWorldHint: false
       }
     },
-    async (args) => {
+    async (args, extra) => {
       const t0 = Date.now();
       const catalog = getCatalog();
 
@@ -392,7 +422,8 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
         confidence: SearchConfidence;
         recoveryMetadata: SearchRecoveryMetadata;
         nextSteps: string;
-      }, page: SearchPage | null, isError?: true) => {
+        ranking?: ProviderRanking;
+      }, page: SearchPage | null, isError?: true, ranking?: RankingDecision) => {
         const text = JSON.stringify(structured);
         logEvent("search", {
           source: "tool",
@@ -400,7 +431,8 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
             query: args.query,
             requestedLimit: args.limit ?? null,
             page,
-            summary: structured
+            summary: structured,
+            ranking
           }),
           // Keep response size observable for compaction and future limits.
           responseChars: text.length,
@@ -413,7 +445,7 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
         };
       };
 
-      const prepared = prepareCatalogSearch(catalog, args.service);
+      const prepared = prepareCatalogSearch(catalog, args.service, options.searchResolver);
       if (!prepared.ok) {
         return respond({
           hits: [],
@@ -441,26 +473,26 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
         }, null, true);
       }
 
-      const { page, recovery } = recoveryStage.resolve({
+      const { page, recovery, ranking } = await recoveryStage.resolve({
         query: args.query,
         kind: args.kind,
         limit: args.limit,
         reason: args.reason
-      });
+      }, { signal: extra.mcpReq.signal });
       const { hits, total, truncated, widerCandidates, confidence, recoveryMetadata } = page;
       const baseNextSteps =
         hits.length > 0
-          ? `These hits are composable: write ONE \`execute\` script that calls the several relevant operations (Promise.all across services for independent calls), then follows up with deeper calls parameterized by their results — e.g. \`await lumenloop.search_directory({ query: "..." })\` then \`lumenloop.get_project({ slug })\`. Every call resolves to { ok: true, data, asOf, asOfBasis, caveat? } or { ok: false, error: { kind, message, hint? } } — payload fields live under \`.data\` (\`r.data.projects\`, never \`r.projects\`); check \`r.ok\` first. Skill hits are operational playbooks — read the sections you need in-script via \`codemode.skill.read(id, { sections })\` (keys: the hit's \`availableSections\`), and pair them with stellarDocs searches for current reference truth. For a design-stage request to create a new artifact, make one prior-art pass before architecture: at most two \`scout.searchRepos\`/\`scout.searchProjects\` discovery calls, one focused detail call, and three returned candidates. Return exact URL, role/applicability, freshness/provenance, and limitations; license/audit/deployment/compatibility stay unknown unless source-backed. Skip it for a single-step how-to or debugging task. Hits whose \`signature\` shows a \`codemode.skill.run("<exact id>", input)\` line are runnable skills — call that line verbatim to run the whole pipeline in one step (payload under \`.data\`, constituent calls audited in \`data.calls\`). Hit order is the ranking to trust: gated hits rank first, and a backfill hit appears above gated hits only when its score decisively dominates them. Recovery candidates are bounded exact-ID contingencies, separate from ranking: use relevant ones in the same execute when an open-world answer remains empty, weak, adjacent, ambiguous, or partial, and validate identity/source/date before asserting. Signatures with a stubbed output type (\`{ /* N top-level fields: ... */ }\`) list the payload's top-level field names — for the full output shape call \`codemode.describe("<exact id>")\` inside \`execute\`. For directory/list rows, inspect keys or filter raw row JSON and nested/common field variants before projecting compact columns. Use \`codemode.search(...)\` mid-script for follow-up discovery; search again here with the other candidate family, varied vocabulary, or \`kind\`/\`service\` filters if none fit.${truncated ? " More entries matched than shown (truncated) — raise `limit`, try the other candidate family, or vary vocabulary if none of these fit." : ""}`
+          ? `These hits are composable: write ONE \`execute\` script that calls the several relevant operations (Promise.all across services for independent calls), then follows up with deeper calls parameterized by their results — e.g. \`await lumenloop.search_directory({ query: "..." })\` then \`lumenloop.get_project({ slug })\`. Every call resolves to { ok: true, data, asOf, asOfBasis, caveat? } or { ok: false, error: { kind, message, hint? } } — payload fields live under \`.data\` (\`r.data.projects\`, never \`r.projects\`); check \`r.ok\` first. Skill hits are operational playbooks — read the sections you need in-script via \`codemode.skill.read(id, { sections })\` (keys: the hit's \`availableSections\`), and pair them with stellarDocs searches for current reference truth. For a design-stage request to create a new artifact, make one prior-art pass before architecture: at most two \`scout.searchRepos\`/\`scout.searchProjects\` discovery calls, one focused detail call, and three returned candidates. Return exact URL, role/applicability, freshness/provenance, and limitations; license/audit/deployment/compatibility stay unknown unless source-backed. Skip it for a single-step how-to or debugging task. Hits whose \`signature\` shows a \`codemode.skill.run("<exact id>", input)\` line are runnable skills — call that line verbatim to run the whole pipeline in one step (payload under \`.data\`, constituent calls audited in \`data.calls\`). ${ranking?.method === "provider" ? PROVIDER_ORDER_NOTE : "Hit order is the ranking to trust: gated hits rank first, and a backfill hit appears above gated hits only when its score decisively dominates them."} Recovery candidates are bounded exact-ID contingencies, separate from ranking: use relevant ones in the same execute when an open-world answer remains empty, weak, adjacent, ambiguous, or partial, and validate identity/source/date before asserting. Signatures with a stubbed output type (\`{ /* N top-level fields: ... */ }\`) list the payload's top-level field names — for the full output shape call \`codemode.describe("<exact id>")\` inside \`execute\`. For directory/list rows, inspect keys or filter raw row JSON and nested/common field variants before projecting compact columns. Use \`codemode.search(...)\` mid-script for follow-up discovery; search again here with the other candidate family, varied vocabulary, or \`kind\`/\`service\` filters if none fit.${truncated ? " More entries matched than shown (truncated) — raise `limit`, try the other candidate family, or vary vocabulary if none of these fit." : ""}`
           : "No hits. Try the other candidate family, vary vocabulary (entity name first, then capability phrase), or drop the `kind`/`service` filters. Do not conclude the capability is missing from one empty result.";
       const nextSteps =
         widerCandidates.some((candidate) => candidate.basis === "short-query-directory")
           ? `${baseNextSteps} This query has one content token without an operation-name token match. Use the advisory directory candidate for a bounded name lookup when the ranked hits do not identify the requested entity.${widerCandidates.some((candidate) => candidate.lane !== "directory") ? " If that lookup does not answer the question, use one relevant broad advisory for a bounded pass." : ""}`
           : widerCandidates.length > 0
           ? hits.length > 0
-            ? `${baseNextSteps} This page has no gated operation match, so the ranked hits are lexical-only candidates; prefer the leading hit that fits the question, and if none does, run one bounded broad pass over the advisory widerCandidates.`
+            ? `${baseNextSteps} ${ranking?.method === "provider" ? "This visible page has no gated operation match; the hits have been ordered by the host provider;" : "This page has no gated operation match, so the ranked hits are lexical-only candidates;"} prefer the leading hit that fits the question, and if none does, run one bounded broad pass over the advisory widerCandidates.`
             : `${baseNextSteps} No gated operation matched either; run one bounded broad pass over the advisory widerCandidates before retrying, and still do not conclude absence.`
           : baseNextSteps;
-      return respond({ hits, total, truncated, recovery, widerCandidates, confidence, recoveryMetadata, nextSteps }, page);
+      return respond({ hits, total, truncated, recovery, widerCandidates, confidence, recoveryMetadata, nextSteps, ...providerRankingFields(ranking) }, page, undefined, ranking);
     }
   );
 
@@ -468,7 +500,7 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
     EXECUTE_TOOL_NAME,
     {
       title: EXECUTE_TOOL_TITLE,
-      description: EXECUTE_DESCRIPTION,
+      description: executeDescriptionForRanking(options.searchResolver !== undefined),
       inputSchema: z.object(executeInputSchema),
       annotations: {
         title: EXECUTE_TOOL_TITLE,
@@ -479,7 +511,7 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
         openWorldHint: false
       }
     },
-    async (args) => {
+    async (args, extra) => {
       const runExecute = options.runExecute;
       if (!runExecute) {
         // No runner injected (plain-Node tests / misconfigured server):
@@ -499,7 +531,16 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions =
       const t0 = Date.now();
       let outcome;
       try {
-        outcome = await runExecute(args.code, options.executeContext?.());
+        const context = options.executeContext?.();
+        outcome = await runExecute(args.code, options.searchResolver
+          ? {
+              ...context,
+              searchResolver: options.searchResolver,
+              searchSignal: context?.searchSignal
+                ? AbortSignal.any([context.searchSignal, extra.mcpReq.signal])
+                : extra.mcpReq.signal
+            }
+          : context);
       } catch (e) {
         // The runner is designed never to throw; belt-and-braces anyway.
         outcome = {

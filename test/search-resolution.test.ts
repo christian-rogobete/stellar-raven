@@ -100,7 +100,7 @@ async function sandboxFacts(arguments_: Record<string, unknown>): Promise<Search
 }
 
 describe("prepareCatalogSearch staged resolution", () => {
-  it("matches the established page and recovery helpers for a valid request", () => {
+  it("matches the established page and recovery helpers for a valid request", async () => {
     const request = {
       query: "builder directory",
       kind: "operation" as const,
@@ -113,7 +113,7 @@ describe("prepareCatalogSearch staged resolution", () => {
     if (!prepared.ok) throw new Error("valid service was rejected");
     const recoveryStage = prepared.checkRecoveryIds(request.recoverFrom);
     if (!recoveryStage.ok) throw new Error("valid recovery ids were rejected");
-    const resolution = recoveryStage.resolve(request);
+    const resolution = await recoveryStage.resolve(request);
 
     expect(resolution).toEqual({
       page: searchCatalogPage(catalog, request),
@@ -148,13 +148,13 @@ describe("prepareCatalogSearch staged resolution", () => {
     });
   });
 
-  it("keeps a reason without recovery ids inert", () => {
+  it("keeps a reason without recovery ids inert", async () => {
     const prepared = prepareCatalogSearch(catalog, undefined);
     if (!prepared.ok) throw new Error("unfiltered search was rejected");
     const recoveryStage = prepared.checkRecoveryIds();
     if (!recoveryStage.ok) throw new Error("empty recovery ids were rejected");
-    const baseline = recoveryStage.resolve({ query: "builder directory", limit: 5 });
-    const reasonOnly = recoveryStage.resolve({
+    const baseline = await recoveryStage.resolve({ query: "builder directory", limit: 5 });
+    const reasonOnly = await recoveryStage.resolve({
       query: "builder directory",
       limit: 5,
       reason: "empty"

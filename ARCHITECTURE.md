@@ -81,6 +81,31 @@ This section gives only the stages.
 An oversized rendered output type becomes a compact stub that names the exact `codemode.describe` call.
 The manifest and detail helpers retain the complete schemas.
 
+### Optional host ranking
+
+[Integration and the one-request example](docs/tool-ranking.md) describe host approval, configuration, and spending boundaries.
+
+[search-ranking.ts](src/catalog/search-ranking.ts) accepts a host-supplied ranking provider.
+It selects up to 50 candidates through the native search path and preserves service and kind filters.
+The provider receives the query and short capability descriptions.
+Exact catalog IDs bypass reranking.
+Successful results retain the requested page limit, with native scores and tiers as provenance.
+The response marks provider ordering explicitly.
+Failure, cancellation, an exhausted attempt budget, or a deadline returns the complete native page.
+
+MCP, sandbox discovery, and Playground accept the same request-scoped resolver.
+Cached execute runners receive it through their call context.
+The context's `searchSignal` cancels catalog ranking; sandbox execution retains its separate lifetime.
+The server and chat entrypoints do not configure a provider.
+[The Jev adapter](src/adapters/jev-ranking.ts) requires a host-issued request grant and reserves calls, tokens, and estimated cost before sending.
+Its budget lives in one host object and survives failed attempts; it is not a distributed account spending limit.
+The resolver's attempt limit covers every provider, including injected implementations.
+The Jev ledger separately caps paid attempts across request grants, with token and cost reserves.
+Each grant also limits attempts for its approved request and carries its cancellation signal and expiry.
+These limits must all allow an attempt; reservations are never refunded.
+Transport uses manual redirect handling and rejects non-200 responses without reading their bodies or following redirects.
+Public activation requires the host approval and elicitation flow, operator controls, and a reviewed spending policy.
+
 ## 3. An `execute` call, end to end
 
 The MCP tool accepts `{ code }` with a non-empty string.
@@ -402,6 +427,11 @@ Rejected bearer requests omit identity fields.
 Network, geography, and TLS values do not become application identity fields.
 
 Search events record query size, limits, counts, tiers, recovery IDs, response size, and timing.
+An optional ranking resolver adds `rankingMethod` and either `rankingReason` for a native outcome or `rankingCandidateCount` for provider ordering.
+Typed adapter failures also add a validated `rankingErrorCode` from a closed vocabulary.
+The categories distinguish approval, configuration, budgets, input, cancellation, timeouts, transport, HTTP authorization, rate limits, other HTTP errors, responses, models, usage, and unknown codes.
+These host fields contain no provider messages or query text.
+Native fallback responses retain their original model-facing shape.
 Execute events record outcomes, sizing, truncation, artifact use, and bounded source-basis facts.
 Operation and runner events record IDs, outcomes, and timing.
 Skill-read events distinguish memo, colo cache, and upstream retrieval.

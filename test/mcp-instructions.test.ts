@@ -11,8 +11,10 @@ import { describe, expect, it } from "vitest";
 import {
   BASE_SERVER_INSTRUCTIONS,
   EXECUTE_DESCRIPTION,
+  executeDescriptionForRanking,
   SEARCH_KINDS,
   SEARCH_DESCRIPTION,
+  searchDescriptionForRanking,
   SERVER_INSTRUCTIONS,
   UPSTREAM_DOC_LINKS,
   rankedSearchOutputSchema,
@@ -187,11 +189,13 @@ describe("server instructions — Claude Code 2KB budget", () => {
  * `## Rules` opener. The URLs must ship in the full description and must not
  * appear in the prefix.
  */
-describe("tool descriptions — Claude Code 2KB clipped prefix", () => {
+describe.each([false, true])("tool description prefix with ranking enabled: %s", enabled => {
+  const searchDescription = searchDescriptionForRanking(enabled);
+  const executeDescription = executeDescriptionForRanking(enabled);
   const clipped = (description: string) => description.slice(0, CLAUDE_CODE_INSTRUCTIONS_CAP);
 
   it("search's clipped prefix still carries the plan-then-compose workflow", () => {
-    const survived = clipped(SEARCH_DESCRIPTION);
+    const survived = clipped(searchDescription);
     for (const phrase of [
       "## Workflow",
       "Plan which source families could ground the answer before searching",
@@ -206,7 +210,7 @@ describe("tool descriptions — Claude Code 2KB clipped prefix", () => {
   });
 
   it("execute's clipped prefix still carries the envelope contract and the globals rule", () => {
-    const survived = clipped(EXECUTE_DESCRIPTION);
+    const survived = clipped(executeDescription);
     for (const phrase of [
       "Service-call payloads live under `.data`",
       "## Rules",
@@ -217,7 +221,7 @@ describe("tool descriptions — Claude Code 2KB clipped prefix", () => {
   });
 
   it("ships the upstream doc URLs in full without spending the clipped budget", () => {
-    for (const contract of [SEARCH_DESCRIPTION, EXECUTE_DESCRIPTION]) {
+    for (const contract of [searchDescription, executeDescription]) {
       expect(contract).toContain(UPSTREAM_DOC_LINKS);
       expect(clipped(contract)).not.toContain("Upstream documentation:");
     }

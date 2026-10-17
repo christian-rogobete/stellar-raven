@@ -77,6 +77,7 @@ import {
   sectionKeysOf
 } from "../catalog/search.ts";
 import { prepareCatalogSearch } from "../catalog/search-resolution.ts";
+import { providerRankingFields, type CatalogPageResolver } from "../catalog/search-ranking.ts";
 import { lastIdSegment, VALID_IDENT } from "../catalog/id.ts";
 import { callService } from "../adapters/index.ts";
 import type { AdapterEnv, AdapterResult, FetchLike, ResultCaveat } from "../adapters/types.ts";
@@ -715,7 +716,8 @@ export function buildCodemodeProvider(
    * behavior against synthetic runners.
    */
   skillRun?: { facade: OpsFacade; secrets: string[]; registry?: Record<string, SkillRunner> },
-  artifact?: ArtifactSandboxDeps
+  artifact?: ArtifactSandboxDeps,
+  search?: { resolver?: CatalogPageResolver; signal?: AbortSignal }
 ): SandboxProvider {
   // Derived once per catalog object, shared across runs (read-only data).
   let catalogView = catalogViewCache.get(catalog);
@@ -887,7 +889,7 @@ export function buildCodemodeProvider(
                 }
               };
             }
-            const prepared = prepareCatalogSearch(catalog, serviceFilter as string | undefined);
+            const prepared = prepareCatalogSearch(catalog, serviceFilter as string | undefined, search?.resolver);
             if (!prepared.ok) {
               return {
                 ok: false,
@@ -937,12 +939,12 @@ export function buildCodemodeProvider(
               };
             }
             const t0 = Date.now();
-            const { page, recovery } = recoveryStage.resolve({
+            const { page, recovery, ranking } = await recoveryStage.resolve({
               query: opts.query,
               kind: kindFilter as SearchKind | undefined,
               limit: typeof opts.limit === "number" ? opts.limit : undefined,
               reason: reason as RetrievalReason | undefined
-            });
+            }, { signal: search?.signal });
             const { hits, total, truncated, widerCandidates, confidence, recoveryMetadata } = page;
             logEvent("search", {
               source: "codemode",
@@ -950,9 +952,10 @@ export function buildCodemodeProvider(
                 query: opts.query,
                 requestedLimit: typeof opts.limit === "number" ? opts.limit : null,
                 page,
-                summary: { hits, total, truncated, recovery, widerCandidates }
+                summary: { hits, total, truncated, recovery, widerCandidates },
+                ranking
               }),
-              responseChars: JSON.stringify({ hits, recovery, widerCandidates, confidence, recoveryMetadata }).length,
+              responseChars: JSON.stringify({ hits, recovery, widerCandidates, confidence, recoveryMetadata, ...providerRankingFields(ranking) }).length,
               ms: Date.now() - t0
             });
             return {
@@ -963,7 +966,8 @@ export function buildCodemodeProvider(
               recovery,
               widerCandidates,
               confidence,
-              recoveryMetadata
+              recoveryMetadata,
+              ...providerRankingFields(ranking)
             };
           },
 
@@ -1233,6 +1237,8 @@ export function buildSandbox(
     onOpCall?: (call: OpLedgerCall) => void;
     artifact?: ArtifactSandboxDeps;
     codemodeDiscovery?: boolean;
+    searchResolver?: CatalogPageResolver;
+    searchSignal?: AbortSignal;
   }
 ): SandboxProvider[] {
   // Runner-wiring assertion at provider build (src/skills/README.md): registry ↔
@@ -1255,7 +1261,8 @@ export function buildSandbox(
       },
       deps?.codemodeDiscovery,
       { facade: ops, secrets: secretsFromEnv(env as Record<string, unknown>) },
-      deps?.artifact
+      deps?.artifact,
+      { resolver: deps?.searchResolver, signal: deps?.searchSignal }
     )
   ];
 }

@@ -1,0 +1,65 @@
+{
+  "format": "raven-tool-ranking-evidence-v1",
+  "node": "24.11.1",
+  "commit": "b1dc8663b37a4795f50538918fdf5f4b08c6b054",
+  "files": {
+    "data.json.gz": "03e41036d07e36c96a883d6277360010f6c3b1ca9a7ef0b9e45af20744515c7d",
+    "expected.json.gz": "713e9c7b8d10c5765973e5a183f465ca37ead79bb5ba7712048ae7e171748f32",
+    "recompute.mjs": "ca0960d274296bd87761b072f28b71b665894a9eb80cf5bf2bd2d6b35493833e",
+    "recompute-checks.mjs": "ac539c1b2866766e00ddc5b433c45fd4a26dee552bf562d425f5a34800204521",
+    "README.md": "ae886f0536b6e65cc1728a50d348cc8e96b9f220ecab447431084b06e445cfa3",
+    "METHOD.md": "7b820d9c26155b0a5a7b4834e5cc7ff302c35fbf5466c498519194aecd61dc98",
+    "MARKED-CASES.md": "22a2381025ab88df0abcd96e94013ed072c5a69d03b676417b8b9c23c0b99b13",
+    "lib/additional.mjs": "926e8c7118877e3889674b9fb9263c119ca86099c7e3afb5697b7a99d23f427b",
+    "lib/analyze.mjs": "2d095a912f66d373283b97e3ab34840822ff812eae7bfd74d32f05e9707d3fa5",
+    "lib/discovery.mjs": "b20d2ad28da083eeed48018d5393f832ea17f05ce345fc4f5b505239bfd92a64",
+    "lib/grade.mjs": "86d42c16038821629ad517cf9db0a8a6238a197caea8917801463e9986c3a8cf",
+    "lib/native-gate.mjs": "50a4fa45ffa7d6a4b68446e293403c8b6284a158b8b43f1941dcb07c2f9a161c",
+    "lib/routing.mjs": "053df90c271b01ca15e03f47d6e48a71eb9a51679d1ea091815c305967f125fe"
+  },
+  "sourceBindings": {
+    "catalog/manifest.json": "4852f62608f105cfff34fdc7e01cdfe886bbeaca69250b8ea5f76d03d5208064",
+    "eval/routing-cases.json": "9e863cedc1f1754f67b3955bfe744254da6ae0d069502aefc7964530493fafd3",
+    "eval/skills-cases.json": "3ec4d90444489550f9ac9745384a4371cdbd0077dfc77a84597652d02f61ba1f",
+    "eval/holdout-cases.json": "cb34d83be86f63a0a4ba06977659afa91d0fbaecbeab0e86b82bef9d73c4bbf5",
+    "eval/protocol-history-cases.json": "df8218e1b3a5a1526859c4c33d9b565cfd23f38b9c835d22fd93322c8e5c8857",
+    "eval/build-question-overlay.json": "f48107dc458c9eeaf127fdb6ca9f6ba23a3c3b9039b7f93fbbff0712b7318235",
+    "eval/gates.json": "584c93b648056c8e77b4303cdc754b1cadab2182e18161e4ded01db89f217b1c",
+    "eval/lib/grade.mjs": "86d42c16038821629ad517cf9db0a8a6238a197caea8917801463e9986c3a8cf",
+    "eval/lib/labels.mjs": "2cd6f4354a74657025e72df4b79a54869d503eafefb58507d7d801b02a5cf324",
+    "eval/discovery/lib.mjs": "cad1a9c0dbc491c70a45028fc037159147540d6c38247517d9443acf5b9704e5",
+    "eval/discovery/cases.json": "a81df0b9a6867d3385f679ac353a981ea1fd6e494940cbde41cdcb441842e135",
+    "eval/discovery/mined-lumenloop-queries.json": "cc9633c13c239b7fa04b8e62492c3a1ddec0d9d1be7c908724b073febd311e94",
+    "test/drift-141-routing.test.ts": "25713097539655f39cb1c30ee7cc384604dc77cd4ad24265822eb1724ee39bcb",
+    "eval/protocol-history-cases-v2.json": "3227cb0d6c3c9d0e942143fd8ee947963eabd339fe91aa4d3d57d6f78a3bc59b",
+    "eval/protocol-history-blind-cases-v2.json": "323aefda9d1f2a502b4cdcc92b0a9c88b0c156f2f2fbcebdec0f743992360780",
+    ".agents/rounds/2026-10-09-followup/routing-step1/acceptance.mjs": "eb7d5b98a08bc2c2e84806716d6da146e36f40c414e61c86cc83fa39ba2bce61"
+  },
+  "provenance": {
+    "commit": "b1dc8663b37a4795f50538918fdf5f4b08c6b054",
+    "manifestSha256": "4852f62608f105cfff34fdc7e01cdfe886bbeaca69250b8ea5f76d03d5208064",
+    "preparationSha256": "2a0ebe6002d67b87e218ff779f54f025563217e59197b84cb674454ed03f2216",
+    "inventorySha256": "5c815c8eacb362b113d4b72c6e2204983130f7d6db0be679b2eedcc7791cba7a",
+    "sourceRolesSha256": "8527e485ee94bc45c5db472cf25fffc72a7c00ecfb10a4328f790d857a535856",
+    "segmentFreezeSha256": [
+      "3c93a0e0159fb1c83a26888ba9ea5284105e49310eca6ca840a545b0d3deb299",
+      "6f241ef88b654fe6f83197c31af7befccadb598e411c2cce3b3313b2060ab240",
+      "e757b4f30f3a81d4997c0987443a30d0ff4ff7a703248cee890e9a8afe04d4ff"
+    ],
+    "candidateSources": {
+      "src/adapters/jev-ranking.ts": "9ba579937b61ae012ab5fae9196593d6e8c23d82b0432352f6a7943062bea3fb",
+      "src/catalog/search-ranking.ts": "0592756e0d8ac67e01f91504206d68e6eafc050d62a3120afb79ea23625d7d06",
+      "src/catalog/search.ts": "2f40efcd772e09612a3fdb5a90b126177aad7d2672f44287ba180607cfabbfea"
+    },
+    "resultsSha256": "f66b80f022297cba303e9f5e155cc100c868862f5aeae52330f5f87f0dfffa1c",
+    "caseDeltasSha256": "47c8b2d85f31aa544a932c4283ef1e29a09b35de13d6c25792f61b536a9c632e",
+    "graderSources": {
+      "grading/routing.mjs": "c598d91a4bc09b6f76f05ac542514e349285201c40a25f791ebef5149e027cf3",
+      "grading/native-gate.mjs": "f7cda221bdb6e108dbdebabf2becccf3f0bde070c8cf09b993654104d7e7b39e",
+      "inventory/inputs.mjs": "a1b41e81bed79f6a8c6f04eda1daf321b465a58979cee578edb7e2eabb50b20d",
+      "collector/analyze-run.mjs": "441cc2cdb3b217e83ebc785c0108f074b716485dc2a41ae0655ba2d568ffa484"
+    }
+  },
+  "expectationSource": "Separately checked original final analysis; the package re-executes the same grading code.",
+  "gradingNotice": "An evidence check PASS is not a Jev quality gate PASS."
+}
