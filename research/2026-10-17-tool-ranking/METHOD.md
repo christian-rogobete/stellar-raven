@@ -23,6 +23,25 @@ The technical variants use Raven's acceptance helper. They are identified separa
 
 The 32 v2 observations do not renew their expired source contract. A fresh source variant described in upstream notes was not committed with the frozen input. This package makes no quality claim about that unavailable snapshot.
 
+## Development overlap
+
+Fourteen of the 49 Raven holdout questions appear in the contributor's 20-question development set. The [subset command](recompute-holdout-subset.mjs) lists their exact IDs and reports the other 35 questions separately.
+The ID list is a disclosure from the contributor's development records. The package verifies the numerical results, not the development history.
+This is a retrospective split of the recorded comparison, not a new blind evaluation. The full 49-case results and all original observations remain part of the package.
+
+```sh
+node research/2026-10-17-tool-ranking/recompute-holdout-subset.mjs
+```
+
+The command verifies package integrity and recomputes all archived grades before summarizing the remaining cases. Its JSON output includes the 14 disclosed IDs and four rows, one per variant and repetition. It requires Node 24 and uses local files only; it writes no files and makes no provider requests.
+
+| Measure on the other 35 questions | Original | Jev | Jev repeat |
+| --- | ---: | ---: | ---: |
+| Expected tool first | 9/35 | 24/35 | 24/35 |
+| Expected tool in first five | 20/35 | 33/35 | 33/35 |
+| Case passes | 17/35 | 17/35 | 18/35 |
+| Cases showing an excluded tool (lower is better) | 8/35 | 17/35 | 16/35 |
+
 ## Ranking and grading
 
 The recording uses Original pages and pools of at most 50 candidates from the same search implementation. A parity check confirms matching pages and pools between the two local code copies. The public package recomputes rankings and grades from those frozen pages; it does not execute the Original search again.

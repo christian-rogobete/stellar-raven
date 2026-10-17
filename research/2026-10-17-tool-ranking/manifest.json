@@ -7,15 +7,17 @@
     "expected.json.gz": "713e9c7b8d10c5765973e5a183f465ca37ead79bb5ba7712048ae7e171748f32",
     "recompute.mjs": "ca0960d274296bd87761b072f28b71b665894a9eb80cf5bf2bd2d6b35493833e",
     "recompute-checks.mjs": "ac539c1b2866766e00ddc5b433c45fd4a26dee552bf562d425f5a34800204521",
-    "README.md": "ae886f0536b6e65cc1728a50d348cc8e96b9f220ecab447431084b06e445cfa3",
-    "METHOD.md": "7b820d9c26155b0a5a7b4834e5cc7ff302c35fbf5466c498519194aecd61dc98",
+    "README.md": "92db383b15bab55525e9bc4c544d7a39dece5092a97a9770396cfe12261f3880",
+    "METHOD.md": "9255669746474f547f9e316b49d439db66b35f7b1f912a6fcea0acbca9a69fa2",
     "MARKED-CASES.md": "22a2381025ab88df0abcd96e94013ed072c5a69d03b676417b8b9c23c0b99b13",
     "lib/additional.mjs": "926e8c7118877e3889674b9fb9263c119ca86099c7e3afb5697b7a99d23f427b",
     "lib/analyze.mjs": "2d095a912f66d373283b97e3ab34840822ff812eae7bfd74d32f05e9707d3fa5",
     "lib/discovery.mjs": "b20d2ad28da083eeed48018d5393f832ea17f05ce345fc4f5b505239bfd92a64",
     "lib/grade.mjs": "86d42c16038821629ad517cf9db0a8a6238a197caea8917801463e9986c3a8cf",
     "lib/native-gate.mjs": "50a4fa45ffa7d6a4b68446e293403c8b6284a158b8b43f1941dcb07c2f9a161c",
-    "lib/routing.mjs": "053df90c271b01ca15e03f47d6e48a71eb9a51679d1ea091815c305967f125fe"
+    "lib/routing.mjs": "053df90c271b01ca15e03f47d6e48a71eb9a51679d1ea091815c305967f125fe",
+    "holdout-subset-checks.mjs": "19b77c21ccd8f72173743566811f99f33acc24f828e2ddcad7900b71c56beba3",
+    "recompute-holdout-subset.mjs": "09d841f2023a14d9af72c7c408cae3cf14738bf6e6596582f5773f8ec6a1807a"
   },
   "sourceBindings": {
     "catalog/manifest.json": "4852f62608f105cfff34fdc7e01cdfe886bbeaca69250b8ea5f76d03d5208064",

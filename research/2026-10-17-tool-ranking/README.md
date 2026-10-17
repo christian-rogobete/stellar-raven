@@ -11,8 +11,15 @@ node research/2026-10-17-tool-ranking/recompute.mjs --check
 node --test research/2026-10-17-tool-ranking/recompute-checks.mjs
 ```
 
+The [development-overlap disclosure](METHOD.md#development-overlap) identifies 14 holdout questions used during development. Recalculate the other 35 questions and check the subset command with:
+
+```sh
+node research/2026-10-17-tool-ranking/recompute-holdout-subset.mjs
+node --test research/2026-10-17-tool-ranking/holdout-subset-checks.mjs
+```
+
 The checker uses only local files and Node's standard library. It requires no dependencies, credentials, or network access. It writes no result files and starts no inference.
-The `node --test` command creates and removes a short-lived directory inside this package folder, so it needs write access there.
+`recompute-checks.mjs` creates and removes a short-lived directory inside this package folder, so it needs write access there. The subset checks write no files.
 
 | Measure | Original, both repetitions | Jev 1 | Jev 2 |
 | --- | ---: | ---: | ---: |
